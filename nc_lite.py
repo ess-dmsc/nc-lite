@@ -81,8 +81,15 @@ class MainWindow(QMainWindow):
 
         insert_menu = menubar.addMenu("Insert")
         insert_nxlog = QAction("Insert NXlog", self)
+        insert_nxlog.setShortcut("Ctrl+N")
         insert_nxlog.triggered.connect(self.insert_nxlog)
         insert_menu.addAction(insert_nxlog)
+
+        format_menu = menubar.addMenu("Format")
+        autoformat_action = QAction("Autoformat JSON", self)
+        autoformat_action.setShortcut("Ctrl+P")
+        autoformat_action.triggered.connect(self.autoformat_json)
+        format_menu.addAction(autoformat_action)
 
         self.tree_widget.itemSelectionChanged.connect(self.on_item_selection_changed)
         self.json_editor.textChanged.connect(self.on_editor_text_changed)
@@ -251,7 +258,6 @@ class MainWindow(QMainWindow):
                 self.highlight_error(e.lineno, e.colno)
                 self.status_bar.showMessage(f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}")
 
-
     def highlight_error(self, line, col):
         # Clear previous highlights
         self.clear_error_highlighting()
@@ -269,6 +275,18 @@ class MainWindow(QMainWindow):
         self.json_editor.clearIndicatorRange(
             0, 0, self.json_editor.lines(), 0, self.error_indicator_number
         )
+
+    def autoformat_json(self):
+        try:
+            # Parse the current text as JSON
+            json_object = json.loads(self.json_editor.text())
+            # Pretty print the JSON
+            formatted_json = json.dumps(json_object, indent=4)
+            # Set the formatted JSON back to the editor
+            self.json_editor.setText(formatted_json)
+        except json.JSONDecodeError as e:
+            # Handle invalid JSON, maybe show an error message
+            self.status_bar.showMessage(f"Invalid JSON: {e}")
 
     def _add_tree_item(self, json_object, parent_item):
         # Check if jsonObject is a dictionary
