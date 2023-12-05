@@ -1,6 +1,5 @@
 import sys
 import json
-# import json5 as json
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QSplitter, QFileDialog, \
     QVBoxLayout, QLineEdit, QPushButton, QWidget, QHBoxLayout, QDialog, QFormLayout, QDialogButtonBox
 from PyQt6.QtGui import QAction, QColor
