@@ -57,11 +57,11 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
 
-        open_action = QAction("Open", self)
+        open_action = QAction("Open...", self)
         open_action.triggered.connect(self.load_json)
         file_menu.addAction(open_action)
 
-        save_action = QAction("Save", self)
+        save_action = QAction("Save as...", self)
         save_action.triggered.connect(self.save_json)
         file_menu.addAction(save_action)
 
@@ -364,9 +364,36 @@ class MainWindow(QMainWindow):
             self.populate_tree(skeleton_module, None)
             self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
 
+    def build_json(self, tree_item=None):
+        if tree_item is None:
+            # If no specific tree item is provided, start from the root items
+            json_list = [self.build_json(item) for item in self.get_root_items()]
+            return json_list[0] if len(json_list) == 1 else json_list
+
+        node_data = self.json_data_store.get(id(tree_item))
+        if node_data is None:
+            return None
+
+        json_object = node_data["data"]
+
+        if tree_item.childCount() > 0:
+            json_object["children"] = [
+                self.build_json(tree_item.child(i)) for i in range(tree_item.childCount())
+            ]
+
+        return json_object
+
+    def get_root_items(self):
+        return [self.tree_widget.topLevelItem(i) for i in range(self.tree_widget.topLevelItemCount())]
+
     def save_json(self):
-        # Function to save JSON data
-        pass
+        file_name, _ = QFileDialog.getSaveFileName(
+            self, "Save JSON File", "", "JSON Files (*.json)"
+        )
+        if file_name:
+            json_data = self.build_json()
+            with open(file_name, 'w') as file:
+                json.dump(json_data, file, indent=2)
 
     def validate_json(self):
         # Function to validate JSON data in the editor
