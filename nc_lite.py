@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
         self.currently_selected_item = None  # Track the currently selected tree item
 
     def init_ui(self):
-        self.tree_widget = QTreeWidget()
+        self.tree_widget = CustomTreeWidget(self)
         self.json_editor = QsciScintilla()
         self.setup_editor()
 
@@ -78,6 +78,11 @@ class MainWindow(QMainWindow):
             self.search_replace_widget.toggle_visibility
         )
         edit_menu.addAction(self.toggle_search_action)
+
+        delete_action = QAction("Delete Selected Item", self)
+        delete_action.setShortcut("Delete")
+        delete_action.triggered.connect(self.delete_selected_item)
+        edit_menu.addAction(delete_action)
 
         insert_menu = menubar.addMenu("Insert")
         insert_nxlog = QAction("Insert NXlog", self)
@@ -340,6 +345,34 @@ class MainWindow(QMainWindow):
                 parent_data["parent"], parent_data["treeItem"], parent_json
             )
 
+    def delete_selected_item(self):
+        selected_items = self.tree_widget.selectedItems()
+        if not selected_items:
+            return  # No item is selected
+
+        item_to_delete = selected_items[0]
+        parent_item = item_to_delete.parent()
+
+        # Remove the item from the tree
+        if parent_item:
+            index = parent_item.indexOfChild(item_to_delete)
+            parent_item.removeChild(item_to_delete)
+            # Update parent's data in json_data_store
+            parent_data = self.json_data_store.get(id(parent_item))
+            if parent_data and "children" in parent_data["data"]:
+                del parent_data["data"]["children"][index]
+
+            self.tree_widget.setCurrentItem(parent_item)
+        else:
+            # If it's a top-level item
+            index = self.tree_widget.indexOfTopLevelItem(item_to_delete)
+            self.tree_widget.takeTopLevelItem(index)
+            del self.json_data_store[id(item_to_delete)]
+
+            self.currently_selected_item = None
+            self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
+            self.json_editor.clear()
+
     def insert_nxlog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add Skeleton Module")
@@ -531,6 +564,17 @@ class SearchReplaceWidget(QWidget):
         else:
             self.show()
             self.search_field.setFocus()
+
+
+class CustomTreeWidget(QTreeWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Delete:
+            self.parent().delete_selected_item()
+        else:
+            super().keyPressEvent(event)
 
 
 def main():
