@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
 
         insert_menu = menubar.addMenu("Insert")
         insert_nxlog = QAction("Insert NXlog", self)
-        insert_nxlog.setShortcut("Ctrl+N")
+        insert_nxlog.setShortcut("Ctrl+I")
         insert_nxlog.triggered.connect(self.insert_nxlog)
         insert_menu.addAction(insert_nxlog)
 
