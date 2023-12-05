@@ -378,13 +378,17 @@ class MainWindow(QMainWindow):
 
         if tree_item.childCount() > 0:
             json_object["children"] = [
-                self.build_json(tree_item.child(i)) for i in range(tree_item.childCount())
+                self.build_json(tree_item.child(i))
+                for i in range(tree_item.childCount())
             ]
 
         return json_object
 
     def get_root_items(self):
-        return [self.tree_widget.topLevelItem(i) for i in range(self.tree_widget.topLevelItemCount())]
+        return [
+            self.tree_widget.topLevelItem(i)
+            for i in range(self.tree_widget.topLevelItemCount())
+        ]
 
     def save_json(self):
         file_name, _ = QFileDialog.getSaveFileName(
@@ -392,7 +396,7 @@ class MainWindow(QMainWindow):
         )
         if file_name:
             json_data = self.build_json()
-            with open(file_name, 'w') as file:
+            with open(file_name, "w") as file:
                 json.dump(json_data, file, indent=2)
 
     def validate_json(self):
