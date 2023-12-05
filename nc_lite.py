@@ -180,7 +180,7 @@ class MainWindow(QMainWindow):
                 name = "<Unnamed>"
         return name
 
-    def populate_tree(self, json_object, parent_item, parentData=None):
+    def populate_tree(self, json_object, parent_item, parent_data=None):
         if isinstance(json_object, dict):
             name = self._get_name(json_object)
             tree_item = (
@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
             )
             node_data = {
                 "data": json_object,
-                "parent": parentData,
+                "parent": parent_data,
                 "treeItem": tree_item,
             }
             self.json_data_store[id(tree_item)] = node_data
@@ -200,7 +200,7 @@ class MainWindow(QMainWindow):
 
         elif isinstance(json_object, list):
             for item in json_object:
-                self.populate_tree(item, parent_item, parentData)
+                self.populate_tree(item, parent_item, parent_data)
 
         else:
             QTreeWidgetItem(parent_item, [str(json_object)])
@@ -244,7 +244,9 @@ class MainWindow(QMainWindow):
             except json.JSONDecodeError as e:
                 # Handle invalid JSON
                 self.highlight_error(e.lineno, e.colno)
-                self.status_bar.showMessage(f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}")
+                self.status_bar.showMessage(
+                    f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}"
+                )
 
         elif self.tree_widget.topLevelItemCount() == 0:
             try:
@@ -256,7 +258,9 @@ class MainWindow(QMainWindow):
             except json.JSONDecodeError as e:
                 # Handle invalid JSON
                 self.highlight_error(e.lineno, e.colno)
-                self.status_bar.showMessage(f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}")
+                self.status_bar.showMessage(
+                    f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}"
+                )
 
     def highlight_error(self, line, col):
         # Clear previous highlights
@@ -378,13 +382,9 @@ class MainWindow(QMainWindow):
                     "name": "entry",
                     "type": "group",
                     "attributes": [
-                        {
-                            "name": "NX_class",
-                            "dtype": "string",
-                            "values": "NXentry"
-                        }
+                        {"name": "NX_class", "dtype": "string", "values": "NXentry"}
                     ],
-                    "children": []
+                    "children": [],
                 }
             ]
         }
