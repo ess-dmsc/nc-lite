@@ -21,6 +21,49 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+MAX_TOTAL_LIST_LEN = 1_000_000
+
+
+def is_within_cumulative_length_limit(json_obj, max_total_list_len=1000):
+    """
+    Checks if the total length of all lists in the JSON object exceeds max_total_list_len.
+
+    :param json_obj: The JSON object (dict or list) to be checked.
+    :param max_total_list_len: Maximum total length of all lists combined.
+    :return: True if total length of all lists does not exceed max_total_list_len, False otherwise.
+    """
+    return check_cumulative_length(json_obj, max_total_list_len)[0]
+
+
+def check_cumulative_length(obj, max_len, current_len=0):
+    """
+    Helper function to recursively check the cumulative length of lists.
+
+    :param obj: Current object (dict or list) being checked.
+    :param max_len: Maximum allowed cumulative length of lists.
+    :param current_len: Current cumulative length of lists encountered.
+    :return: Tuple (bool, int) where bool indicates if cumulative length does not exceed max_len, and int is the current cumulative length.
+    """
+    if isinstance(obj, list):
+        current_len += len(obj)
+        if current_len > max_len:
+            return False, current_len
+        for item in obj:
+            if isinstance(item, (dict, list)):
+                valid, current_len = check_cumulative_length(item, max_len, current_len)
+                if not valid:
+                    return False, current_len
+    elif isinstance(obj, dict):
+        for value in obj.values():
+            if isinstance(value, (dict, list)):
+                valid, current_len = check_cumulative_length(
+                    value, max_len, current_len
+                )
+                if not valid:
+                    return False, current_len
+
+    return True, current_len
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -218,8 +261,17 @@ class MainWindow(QMainWindow):
             if node_data:
                 # Extract only the JSON data for serialization
                 json_data = node_data.get("data", {})
-                raw_json = json.dumps(json_data, indent=4)
-                self.json_editor.setText(raw_json)
+
+                safe_to_render = is_within_cumulative_length_limit(
+                    json_data, MAX_TOTAL_LIST_LEN
+                )
+                if safe_to_render:
+                    raw_json = json.dumps(json_data, indent=4)
+                    self.json_editor.setText(raw_json)
+                else:
+                    self.status_bar.showMessage(
+                        f"Display Error: Total length of lists exceeds {MAX_TOTAL_LIST_LEN}"
+                    )
             else:
                 self.currently_selected_item = None
 
