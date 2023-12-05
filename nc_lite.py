@@ -239,6 +239,19 @@ class MainWindow(QMainWindow):
                 self.highlight_error(e.lineno, e.colno)
                 self.status_bar.showMessage(f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}")
 
+        elif self.tree_widget.topLevelItemCount() == 0:
+            try:
+                updated_json = json.loads(self.json_editor.text())
+                self.tree_widget.clear()  # Clear existing items in the tree
+                self.populate_tree(updated_json, None)
+                self.clear_error_highlighting()
+                self.status_bar.showMessage("Looks good!")
+            except json.JSONDecodeError as e:
+                # Handle invalid JSON
+                self.highlight_error(e.lineno, e.colno)
+                self.status_bar.showMessage(f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}")
+
+
     def highlight_error(self, line, col):
         # Clear previous highlights
         self.clear_error_highlighting()
