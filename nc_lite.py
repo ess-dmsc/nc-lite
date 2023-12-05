@@ -51,11 +51,17 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.tree_widget)
         splitter.addWidget(self.editor_container)  # Add the container to the splitter
 
+        self.status_bar = self.statusBar()
+
         self.setCentralWidget(splitter)
 
         # Menu for loading and saving JSON
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
+
+        new_action = QAction("New", self)
+        new_action.triggered.connect(self.new_json)
+        file_menu.addAction(new_action)
 
         open_action = QAction("Open...", self)
         open_action.triggered.connect(self.load_json)
@@ -151,6 +157,7 @@ class MainWindow(QMainWindow):
                 data = json.load(file)
             self.tree_widget.clear()  # Clear existing items in the tree
             self.populate_tree(data, None)
+            self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
 
     def _get_name(self, json_object):
         name = json_object.get("name")  # Get the 'name' value
@@ -225,11 +232,12 @@ class MainWindow(QMainWindow):
                     node_data["parent"], self.currently_selected_item, updated_json
                 )
                 self.clear_error_highlighting()
+                self.status_bar.showMessage("Looks good!")
 
             except json.JSONDecodeError as e:
                 # Handle invalid JSON
                 self.highlight_error(e.lineno, e.colno)
-                pass
+                self.status_bar.showMessage(f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}")
 
     def highlight_error(self, line, col):
         # Clear previous highlights
@@ -331,6 +339,38 @@ class MainWindow(QMainWindow):
                 topic_edit.text(),
                 units_edit.text(),
             )
+
+    def create_initial_json(self):
+        return {
+            "children": [
+                {
+                    "name": "entry",
+                    "type": "group",
+                    "attributes": [
+                        {
+                            "name": "NX_class",
+                            "dtype": "string",
+                            "values": "NXentry"
+                        }
+                    ],
+                    "children": []
+                }
+            ]
+        }
+
+    def new_json(self):
+        # Clear the current JSON data store and tree widget
+        self.json_data_store.clear()
+        self.tree_widget.clear()
+        self.currently_selected_item = None
+
+        # Create initial JSON structure
+        initial_json = self.create_initial_json()
+
+        # Populate the tree and the editor with the initial JSON
+        self.populate_tree(initial_json, None)
+        # self.json_editor.setText(json.dumps(initial_json, indent=4))
+        self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
 
     def insert_nxlog_json(self, name, module, source, topic, units):
         # Construct the skeleton module JSON
