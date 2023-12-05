@@ -1,10 +1,25 @@
-import sys
 import json
-from PyQt6.QtWidgets import QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QSplitter, QFileDialog, \
-    QVBoxLayout, QLineEdit, QPushButton, QWidget, QHBoxLayout, QDialog, QFormLayout, QDialogButtonBox
-from PyQt6.QtGui import QAction, QColor
+import sys
+
+from PyQt6.Qsci import QsciLexerJSON, QsciScintilla
 from PyQt6.QtCore import Qt
-from PyQt6.Qsci import QsciScintilla, QsciLexerJSON
+from PyQt6.QtGui import QAction, QColor
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class MainWindow(QMainWindow):
@@ -40,47 +55,57 @@ class MainWindow(QMainWindow):
 
         # Menu for loading and saving JSON
         menubar = self.menuBar()
-        file_menu = menubar.addMenu('File')
+        file_menu = menubar.addMenu("File")
 
-        open_action = QAction('Open', self)
+        open_action = QAction("Open", self)
         open_action.triggered.connect(self.load_json)
         file_menu.addAction(open_action)
 
-        save_action = QAction('Save', self)
+        save_action = QAction("Save", self)
         save_action.triggered.connect(self.save_json)
         file_menu.addAction(save_action)
 
-        edit_menu = menubar.addMenu('Edit')
-        self.toggle_search_action = QAction('Show/Hide Search and Replace', self)
-        self.toggle_search_action.setShortcut('Ctrl+F')
-        self.toggle_search_action.triggered.connect(self.search_replace_widget.toggle_visibility)
+        edit_menu = menubar.addMenu("Edit")
+        self.toggle_search_action = QAction("Show/Hide Search and Replace", self)
+        self.toggle_search_action.setShortcut("Ctrl+F")
+        self.toggle_search_action.triggered.connect(
+            self.search_replace_widget.toggle_visibility
+        )
         edit_menu.addAction(self.toggle_search_action)
 
-        insert_menu = menubar.addMenu('Insert')
-        insert_nxlog = QAction('Insert NXlog', self)
+        insert_menu = menubar.addMenu("Insert")
+        insert_nxlog = QAction("Insert NXlog", self)
         insert_nxlog.triggered.connect(self.insert_nxlog)
         insert_menu.addAction(insert_nxlog)
 
         self.tree_widget.itemSelectionChanged.connect(self.on_item_selection_changed)
         self.json_editor.textChanged.connect(self.on_editor_text_changed)
 
-        self.tree_widget.setStyleSheet("""
+        self.tree_widget.setStyleSheet(
+            """
             QTreeWidget {
                 selection-background-color: #528BFF; /* Adjust color as needed */
                 selection-color: white; /* Adjust text color as needed */
             }
-        """)
+        """
+        )
 
     def setup_editor(self):
         # Set up the JSON lexer for syntax highlighting
         lexer = QsciLexerJSON()
         lexer.setDefaultPaper(QColor("#1e1e1e"))  # Dark background
         lexer.setDefaultColor(QColor("#d4d4d4"))  # Light grey
-        lexer.setColor(QColor("#9CDCFE"), QsciLexerJSON.Property)  # Property names (keys)
+        lexer.setColor(
+            QColor("#9CDCFE"), QsciLexerJSON.Property
+        )  # Property names (keys)
         lexer.setColor(QColor("#CE9178"), QsciLexerJSON.String)  # Strings
         lexer.setColor(QColor("#B5CEA8"), QsciLexerJSON.Number)  # Numbers
-        lexer.setColor(QColor("#569CD6"), QsciLexerJSON.Keyword)  # Keywords (true, false, null)
-        lexer.setColor(QColor("#608B4E"), QsciLexerJSON.Operator)  # Operators (:, {, }, [, ])
+        lexer.setColor(
+            QColor("#569CD6"), QsciLexerJSON.Keyword
+        )  # Keywords (true, false, null)
+        lexer.setColor(
+            QColor("#608B4E"), QsciLexerJSON.Operator
+        )  # Operators (:, {, }, [, ])
 
         self.json_editor.setLexer(lexer)
         self.json_editor.setCaretForegroundColor(QColor("#FFFFFF"))
@@ -109,15 +134,20 @@ class MainWindow(QMainWindow):
         self.error_indicator_number = 0
 
         # Set the error indicator style
-        self.json_editor.indicatorDefine(QsciScintilla.IndicatorStyle.FullBoxIndicator, self.error_indicator_number)
-        self.json_editor.setIndicatorForegroundColor(QColor(255, 0, 0, 100),
-                                                     self.error_indicator_number)  # Semi-transparent red
+        self.json_editor.indicatorDefine(
+            QsciScintilla.IndicatorStyle.FullBoxIndicator, self.error_indicator_number
+        )
+        self.json_editor.setIndicatorForegroundColor(
+            QColor(255, 0, 0, 100), self.error_indicator_number
+        )  # Semi-transparent red
 
     def load_json(self):
         # Open a file dialog to select the JSON file
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open JSON File", "", "JSON Files (*.json)")
+        file_name, _ = QFileDialog.getOpenFileName(
+            self, "Open JSON File", "", "JSON Files (*.json)"
+        )
         if file_name:
-            with open(file_name, 'r') as file:
+            with open(file_name, "r") as file:
                 data = json.load(file)
             self.tree_widget.clear()  # Clear existing items in the tree
             self.populate_tree(data, None)
@@ -129,8 +159,8 @@ class MainWindow(QMainWindow):
             config = json_object.get("config")
             if config and "name" in config:
                 name = config["name"]
-            elif config and 'topic' and 'source' in config:
-                name = config['topic'] + ' ' + config['source']
+            elif config and "topic" and "source" in config:
+                name = config["topic"] + " " + config["source"]
             else:
                 # If still no name, use a default name or skip
                 name = "<Unnamed>"
@@ -139,8 +169,16 @@ class MainWindow(QMainWindow):
     def populate_tree(self, json_object, parent_item, parentData=None):
         if isinstance(json_object, dict):
             name = self._get_name(json_object)
-            tree_item = QTreeWidgetItem(parent_item, [name]) if parent_item else QTreeWidgetItem(self.tree_widget, [name])
-            node_data = {"data": json_object, "parent": parentData, "treeItem": tree_item}
+            tree_item = (
+                QTreeWidgetItem(parent_item, [name])
+                if parent_item
+                else QTreeWidgetItem(self.tree_widget, [name])
+            )
+            node_data = {
+                "data": json_object,
+                "parent": parentData,
+                "treeItem": tree_item,
+            }
             self.json_data_store[id(tree_item)] = node_data
 
             for child in json_object.get("children", []):
@@ -183,7 +221,9 @@ class MainWindow(QMainWindow):
                     self._add_tree_item(child, self.currently_selected_item)
 
                 # Update the entire JSON hierarchy
-                self.update_parent_node(node_data["parent"], self.currently_selected_item, updated_json)
+                self.update_parent_node(
+                    node_data["parent"], self.currently_selected_item, updated_json
+                )
                 self.clear_error_highlighting()
 
             except json.JSONDecodeError as e:
@@ -199,11 +239,15 @@ class MainWindow(QMainWindow):
         # Length of the line
         line_length = len(self.json_editor.text(line - 1))
         # Apply the indicator over the line
-        self.json_editor.fillIndicatorRange(line - 1, 0, line - 1, line_length, self.error_indicator_number)
+        self.json_editor.fillIndicatorRange(
+            line - 1, 0, line - 1, line_length, self.error_indicator_number
+        )
 
     def clear_error_highlighting(self):
         # Clear the entire range of the document
-        self.json_editor.clearIndicatorRange(0, 0, self.json_editor.lines(), 0, self.error_indicator_number)
+        self.json_editor.clearIndicatorRange(
+            0, 0, self.json_editor.lines(), 0, self.error_indicator_number
+        )
 
     def _add_tree_item(self, json_object, parent_item):
         # Check if jsonObject is a dictionary
@@ -212,7 +256,11 @@ class MainWindow(QMainWindow):
             tree_item = QTreeWidgetItem(parent_item, [name])
 
             # Store the linked data structure
-            node_data = {"data": json_object, "parent": self.json_data_store.get(id(parent_item)), "treeItem": tree_item}
+            node_data = {
+                "data": json_object,
+                "parent": self.json_data_store.get(id(parent_item)),
+                "treeItem": tree_item,
+            }
             self.json_data_store[id(tree_item)] = node_data
 
             # Recursively add children
@@ -221,7 +269,10 @@ class MainWindow(QMainWindow):
         else:
             # Handle non-dictionary jsonObject (e.g., string, number)
             tree_item = QTreeWidgetItem(parent_item, [str(json_object)])
-            self.json_data_store[id(tree_item)] = {"data": json_object, "parent": self.json_data_store.get(id(parent_item))}
+            self.json_data_store[id(tree_item)] = {
+                "data": json_object,
+                "parent": self.json_data_store.get(id(parent_item)),
+            }
 
     def update_parent_node(self, parent_data, child_item, child_json):
         if parent_data is None:
@@ -232,7 +283,9 @@ class MainWindow(QMainWindow):
         # Check and update the specific child in the parent's 'children' list
         found = False
         for i, child in enumerate(children):
-            if "treeItem" in parent_data and id(parent_data["treeItem"].child(i)) == id(child_item):
+            if "treeItem" in parent_data and id(parent_data["treeItem"].child(i)) == id(
+                child_item
+            ):
                 children[i] = child_json
                 found = True
                 break
@@ -240,7 +293,9 @@ class MainWindow(QMainWindow):
         # If the child was updated, propagate the change to the parent
         if found:
             parent_data["data"]["children"] = children
-            self.update_parent_node(parent_data["parent"], parent_data["treeItem"], parent_json)
+            self.update_parent_node(
+                parent_data["parent"], parent_data["treeItem"], parent_json
+            )
 
     def insert_nxlog(self):
         dialog = QDialog(self)
@@ -261,7 +316,9 @@ class MainWindow(QMainWindow):
         layout.addRow("Units:", units_edit)
 
         # Dialog buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addRow(buttons)
@@ -272,7 +329,7 @@ class MainWindow(QMainWindow):
                 module_edit.text(),
                 source_edit.text(),
                 topic_edit.text(),
-                units_edit.text()
+                units_edit.text(),
             )
 
     def insert_nxlog_json(self, name, module, source, topic, units):
@@ -281,11 +338,15 @@ class MainWindow(QMainWindow):
             "name": name,
             "type": "group",
             "attributes": [{"name": "NX_class", "dtype": "string", "values": "NXlog"}],
-            "children": [{
-                "module": module,
-                "config": {"source": source, "topic": topic, "dtype": "double"},
-                "attributes": [] if not units else [{"name": "units", "dtype": "string", "values": units}]
-            }]
+            "children": [
+                {
+                    "module": module,
+                    "config": {"source": source, "topic": topic, "dtype": "double"},
+                    "attributes": []
+                    if not units
+                    else [{"name": "units", "dtype": "string", "values": units}],
+                }
+            ],
         }
 
         # Insert into the currently selected JSON item
@@ -377,5 +438,5 @@ def main():
     sys.exit(app.exec())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
