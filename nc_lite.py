@@ -633,7 +633,7 @@ class CustomTreeWidget(QTreeWidget):
         super().__init__(parent)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete:
+        if event.key() == Qt.Key.Key_Delete:
             self.parent().delete_selected_item()
         else:
             super().keyPressEvent(event)
