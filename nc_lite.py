@@ -208,11 +208,21 @@ class MainWindow(QMainWindow):
             self, "Open JSON File", "", "JSON Files (*.json)"
         )
         if file_name:
-            with open(file_name, "r") as file:
-                data = json.load(file)
-            self.tree_widget.clear()  # Clear existing items in the tree
-            self.populate_tree(data, None)
-            self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
+            try:
+                with open(file_name, "r") as file:
+                    data = json.load(file)
+                self.tree_widget.clear()  # Clear existing items in the tree
+                self.populate_tree(data, None)
+                self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
+            except json.JSONDecodeError as e:
+                # Handle invalid JSON
+                with open(file_name, "r") as file:
+                    raw_json = file.read()
+                    self.json_editor.setText(raw_json)
+                self.highlight_error(e.lineno, e.colno)
+                self.status_bar.showMessage(
+                    f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}"
+                )
 
     def _get_name(self, json_object):
         name = json_object.get("name")  # Get the 'name' value
