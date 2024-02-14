@@ -291,15 +291,21 @@ class MainWindow(QMainWindow):
                 updated_json = json.loads(self.json_editor.text())
                 node_data = self.json_data_store[id(self.currently_selected_item)]
                 node_data["data"] = updated_json
-                new_name = self._get_name(updated_json)
+                if isinstance(updated_json, dict):
+                    new_name = self._get_name(updated_json)
+                elif isinstance(updated_json, str):
+                    new_name = updated_json
+                else:
+                    raise ValueError("Invalid JSON type")
                 self.currently_selected_item.setText(0, new_name)
 
                 # Clear current children of the tree item
                 self.currently_selected_item.takeChildren()
 
                 # Recursively add new children if they exist
-                for child in updated_json.get("children", []):
-                    self._add_tree_item(child, self.currently_selected_item)
+                if isinstance(updated_json, dict):
+                    for child in updated_json.get("children", []):
+                        self._add_tree_item(child, self.currently_selected_item)
 
                 # Update the entire JSON hierarchy
                 self.update_parent_node(
@@ -507,7 +513,7 @@ class MainWindow(QMainWindow):
             "children": [
                 {
                     "module": module,
-                    "config": {"source": source, "topic": topic, "dtype": "double"},
+                    "config": {"source": source, "topic": topic, "dtype": "double", "value_units": units},
                     "attributes": []
                     if not units
                     else [{"name": "units", "dtype": "string", "values": units}],
