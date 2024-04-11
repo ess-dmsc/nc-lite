@@ -133,6 +133,10 @@ class MainWindow(QMainWindow):
         insert_nxlog.triggered.connect(self.insert_nxlog)
         insert_menu.addAction(insert_nxlog)
 
+        insert_string = QAction("Insert String", self)
+        insert_string.triggered.connect(self.insert_string)
+        insert_menu.addAction(insert_string)
+
         format_menu = menubar.addMenu("Format")
         autoformat_action = QAction("Autoformat JSON", self)
         autoformat_action.setShortcut("Ctrl+P")
@@ -266,6 +270,7 @@ class MainWindow(QMainWindow):
     def on_item_selection_changed(self):
         selected_items = self.tree_widget.selectedItems()
         if selected_items:
+            print(f"Selected item: {selected_items}")
             self.currently_selected_item = selected_items[0]
             node_data = self.json_data_store.get(id(self.currently_selected_item))
             if node_data:
@@ -276,6 +281,7 @@ class MainWindow(QMainWindow):
                     json_data, MAX_TOTAL_LIST_LEN
                 )
                 if safe_to_render:
+                    print(f"Node data: {node_data}")
                     raw_json = json.dumps(json_data, indent=4)
                     self.json_editor.setText(raw_json)
                 else:
@@ -283,6 +289,7 @@ class MainWindow(QMainWindow):
                         f"Display Error: Total length of lists exceeds {MAX_TOTAL_LIST_LEN}"
                     )
             else:
+                print("No data found for the selected item")
                 self.currently_selected_item = None
 
     def on_editor_text_changed(self):
@@ -476,6 +483,28 @@ class MainWindow(QMainWindow):
                 units_edit.text(),
             )
 
+    def insert_string(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Simple String")
+        layout = QFormLayout(dialog)
+
+        # Create input fields
+        name_edit = QLineEdit(dialog)
+
+        layout.addRow("Name:", name_edit)
+        # Dialog buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.insert_simple_string(
+                name_edit.text(),
+            )
+
     def create_initial_json(self):
         return {
             "children": [
@@ -536,6 +565,20 @@ class MainWindow(QMainWindow):
             self.populate_tree(skeleton_module, None)
             self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
 
+    def insert_simple_string(self, name):
+        if self.currently_selected_item:
+            node_data = self.json_data_store.get(id(self.currently_selected_item))
+            if node_data:
+                json_data = node_data["data"]
+                if "children" not in json_data:
+                    json_data["children"] = []
+                json_data["children"].append(name)
+                self.json_editor.setText(json.dumps(json_data, indent=4))
+                self.on_editor_text_changed()
+        else:
+            self.populate_tree(name, None)
+            self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
+
     def build_json(self, tree_item=None):
         if tree_item is None:
             # If no specific tree item is provided, start from the root items
@@ -569,7 +612,8 @@ class MainWindow(QMainWindow):
         if file_name:
             json_data = self.build_json()
             with open(file_name, "w") as file:
-                json.dump(json_data, file, indent=2)
+                # json.dump(json_data, file, indent=2)
+                json.dump(json_data, file, separators=(',', ':'), ensure_ascii=False)
 
     def validate_json(self):
         # Function to validate JSON data in the editor
