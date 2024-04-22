@@ -270,7 +270,6 @@ class MainWindow(QMainWindow):
     def on_item_selection_changed(self):
         selected_items = self.tree_widget.selectedItems()
         if selected_items:
-            print(f"Selected item: {selected_items}")
             self.currently_selected_item = selected_items[0]
             node_data = self.json_data_store.get(id(self.currently_selected_item))
             if node_data:
@@ -281,7 +280,6 @@ class MainWindow(QMainWindow):
                     json_data, MAX_TOTAL_LIST_LEN
                 )
                 if safe_to_render:
-                    print(f"Node data: {node_data}")
                     raw_json = json.dumps(json_data, indent=4)
                     self.json_editor.setText(raw_json)
                 else:
