@@ -111,8 +111,12 @@ class MainWindow(QMainWindow):
         file_menu.addAction(open_action)
 
         save_action = QAction("Save as...", self)
-        save_action.triggered.connect(self.save_json)
+        save_action.triggered.connect(lambda: self.save_json(compress=False))
         file_menu.addAction(save_action)
+
+        save_compressed_action = QAction("Save as compressed...", self)
+        save_compressed_action.triggered.connect(lambda: self.save_json(compress=True))
+        file_menu.addAction(save_compressed_action)
 
         edit_menu = menubar.addMenu("Edit")
         self.toggle_search_action = QAction("Show/Hide Search and Replace", self)
@@ -603,15 +607,17 @@ class MainWindow(QMainWindow):
             for i in range(self.tree_widget.topLevelItemCount())
         ]
 
-    def save_json(self):
+    def save_json(self, compress=False):
         file_name, _ = QFileDialog.getSaveFileName(
             self, "Save JSON File", "", "JSON Files (*.json)"
         )
         if file_name:
             json_data = self.build_json()
             with open(file_name, "w") as file:
-                # json.dump(json_data, file, indent=2)
-                json.dump(json_data, file, separators=(',', ':'), ensure_ascii=False)
+                if compress:
+                    json.dump(json_data, file, separators=(',', ':'), ensure_ascii=False)
+                else:
+                    json.dump(json_data, file, indent=2)
 
     def validate_json(self):
         # Function to validate JSON data in the editor
