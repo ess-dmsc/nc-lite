@@ -1,27 +1,41 @@
 import json
 import sys
+import threading
 
+import numpy as np
+import vtk
 from PyQt6.Qsci import QsciLexerJSON, QsciScintilla
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor
-from PyQt6.QtWidgets import (
-    QApplication,
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
-    QFormLayout,
-    QHBoxLayout,
-    QLineEdit,
-    QMainWindow,
-    QPushButton,
-    QSplitter,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
+                             QFileDialog, QFormLayout, QFrame, QHBoxLayout,
+                             QLineEdit, QMainWindow, QPushButton, QSplitter,
+                             QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                             QWidget)
+from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 MAX_TOTAL_LIST_LEN = 1_000_000
+
+
+def traverse_json(json_obj, condition_fn, action_fn, path=[]) -> None:
+    """
+    Recursively traverse the JSON object applying a condition function
+    at each node. If the condition is met, applies an action function.
+
+    :param json_obj: The JSON object or part of it being traversed.
+    :param condition_fn: A function that takes a node and returns True if the condition is met.
+    :param action_fn: A function that performs an action on nodes that meet the condition.
+    :param path: The current path to the node, used for tracking the node's location within the JSON.
+    """
+    if condition_fn(json_obj):
+        action_fn(json_obj, path)
+
+    if isinstance(json_obj, dict):
+        for key, value in json_obj.items():
+            traverse_json(value, condition_fn, action_fn, path + [key])
+    elif isinstance(json_obj, list):
+        for index, item in enumerate(json_obj):
+            traverse_json(item, condition_fn, action_fn, path + [index])
 
 
 def is_within_cumulative_length_limit(json_obj, max_total_list_len=1000):
@@ -146,6 +160,11 @@ class MainWindow(QMainWindow):
         autoformat_action.setShortcut("Ctrl+P")
         autoformat_action.triggered.connect(self.autoformat_json)
         format_menu.addAction(autoformat_action)
+
+        view_menu = menubar.addMenu("View")
+        render_off_geometry_action = QAction("Render OFF Geometry", self)
+        render_off_geometry_action.triggered.connect(self.render_off_geometry)
+        view_menu.addAction(render_off_geometry_action)
 
         self.tree_widget.itemSelectionChanged.connect(self.on_item_selection_changed)
         self.json_editor.textChanged.connect(self.on_editor_text_changed)
@@ -347,8 +366,6 @@ class MainWindow(QMainWindow):
     def highlight_error(self, line, col):
         # Clear previous highlights
         self.clear_error_highlighting()
-        # Convert line and column to position
-        position = self.json_editor.positionFromLineIndex(line - 1, col - 1)
         # Length of the line
         line_length = len(self.json_editor.text(line - 1))
         # Apply the indicator over the line
@@ -622,6 +639,119 @@ class MainWindow(QMainWindow):
     def validate_json(self):
         # Function to validate JSON data in the editor
         pass
+
+    def render_off_geometry(self):
+        if not self.currently_selected_item:
+            self.status_bar.showMessage("No item selected")
+            return
+
+        node_data = self.json_data_store.get(id(self.currently_selected_item))
+        if not node_data:
+            self.status_bar.showMessage("No data found for the selected item")
+            return
+
+        json_data = node_data["data"]
+        geometries = self.get_off_geometries(json_data)
+        if not geometries:
+            self.status_bar.showMessage("No geometries found in the selected item")
+            return
+
+        actors = self.create_vtk_actors(geometries)
+
+        self.show_vtk_window(actors)
+
+    def get_off_geometries(self, json_obj):
+        geometries = []
+
+        def condition_fn(node):
+            if isinstance(node, dict) and "name" in node and node["name"] == "pixel_shape":
+                if "children" not in node:
+                    return False
+                return True
+            return False
+
+        def action_fn(node, path):
+            vertices = []
+            faces = []
+            winding_order = []
+            for child in node["children"]:
+                if child.get("config", {}).get("name") == "vertices":
+                    vertices = child["config"]["values"]
+                elif child.get("config", {}).get("name") == "faces":
+                    faces = child["config"]["values"]
+                elif child.get("config", {}).get("name") == "winding_order":
+                    winding_order = child["config"]["values"]
+            if vertices and faces and winding_order:
+                geometries.append({"vertices": vertices, "faces": faces, "winding_order": winding_order})
+
+        traverse_json(json_obj, condition_fn, action_fn)
+        return geometries
+
+    def create_vtk_actors(self, geometries):
+        actors = []
+
+        for geometry in geometries:
+            vertices = np.array(geometry["vertices"])
+            faces = np.array(geometry["faces"])
+            winding_order = np.array(geometry["winding_order"])
+
+            points = vtk.vtkPoints()
+            for vertex in vertices:
+                points.InsertNextPoint(vertex)
+
+            polys = vtk.vtkCellArray()
+            num_faces = len(faces)
+            for i in range(num_faces):
+                polys.InsertNextCell(4)
+                polys.InsertCellPoint(winding_order[4 * i])
+                polys.InsertCellPoint(winding_order[4 * i + 1])
+                polys.InsertCellPoint(winding_order[4 * i + 2])
+                polys.InsertCellPoint(winding_order[4 * i + 3])
+
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetPolys(polys)
+
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(poly_data)
+
+            actor = vtk.vtkActor()
+            actor.SetMapper(mapper)
+            actors.append(actor)
+
+        return actors
+
+    def show_vtk_window(self, actors):
+        class VTKWindow(QFrame):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.vtk_widget = QVTKRenderWindowInteractor(self)
+                layout = QVBoxLayout()
+                layout.addWidget(self.vtk_widget)
+                self.setLayout(layout)
+
+                self.renderer = vtk.vtkRenderer()
+                for actor in actors:
+                    self.renderer.AddActor(actor)
+                self.renderer.SetBackground(0.1, 0.2, 0.4)
+
+                self.render_window = self.vtk_widget.GetRenderWindow()
+                self.render_window.AddRenderer(self.renderer)
+
+                self.interactor = self.vtk_widget
+                self.interactor.SetRenderWindow(self.render_window)
+
+                style = vtk.vtkInteractorStyleTrackballCamera()
+                self.interactor.SetInteractorStyle(style)
+
+                self.interactor.Initialize()
+                self.interactor.Start()
+
+        def thread_window():
+            self.vtk_window = VTKWindow()
+            self.vtk_window.show()
+
+        threading.Thread(target=thread_window, daemon=True).start()
 
 
 class SearchReplaceWidget(QWidget):
