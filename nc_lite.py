@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
                              QWidget)
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
+from depend_on import DependsOnVerifier, DependsOnReportDialog
+
 MAX_TOTAL_LIST_LEN = 1_000_000
 
 
@@ -165,6 +167,12 @@ class MainWindow(QMainWindow):
         render_off_geometry_action = QAction("Render OFF Geometry", self)
         render_off_geometry_action.triggered.connect(self.render_off_geometry)
         view_menu.addAction(render_off_geometry_action)
+
+        tools_menu = menubar.addMenu("Tools")
+        verify_action = QAction("Verify depends_on", self)
+        verify_action.setShortcut("Ctrl+D")
+        verify_action.triggered.connect(self.verify_depends_on)
+        tools_menu.addAction(verify_action)
 
         self.tree_widget.itemSelectionChanged.connect(self.on_item_selection_changed)
         self.json_editor.textChanged.connect(self.on_editor_text_changed)
@@ -466,6 +474,32 @@ class MainWindow(QMainWindow):
             self.currently_selected_item = None
             self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
             self.json_editor.clear()
+
+    def verify_depends_on(self):
+        """
+        Walks the current JSON, finds all nodes with a 'depends_on' attribute,
+        resolves each chain according to NXtransformations rules, and reports:
+          - broken references
+          - cycles
+          - missing attributes (vector, depends_on)
+          - non-unit or invalid vectors
+          - invalid/unknown transformation_type
+          - offset present without offset_units (warning)
+        """
+        data = self.build_json()
+        if data is None:
+            self.status_bar.showMessage("Nothing to verify.")
+            return
+
+        verifier = DependsOnVerifier(data)
+        issues, summary = verifier.run()
+
+        dlg = DependsOnReportDialog(self, issues, summary)
+        dlg.exec()
+
+        msg = f"depends_on: {summary['chains_checked']} chain(s) checked, "\
+              f"{summary['errors']} error(s), {summary['warnings']} warning(s)"
+        self.status_bar.showMessage(msg)
 
     def insert_nxlog(self):
         dialog = QDialog(self)
