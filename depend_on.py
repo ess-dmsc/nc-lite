@@ -1,6 +1,11 @@
-from PyQt6.QtWidgets import (QDialog, QDialogButtonBox,
-                             QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                              QLabel)
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QLabel,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+)
 
 
 class DependsOnVerifier:
@@ -22,9 +27,9 @@ class DependsOnVerifier:
 
     def __init__(self, json_root):
         self.root = json_root
-        self.index = {}            # absolute_path -> node (dict)
-        self.node_group = {}       # id(node) -> enclosing group absolute path
-        self.group_paths = set()   # for quick parent checks
+        self.index = {}  # absolute_path -> node (dict)
+        self.node_group = {}  # id(node) -> enclosing group absolute path
+        self.group_paths = set()  # for quick parent checks
 
         # Build index (handles root being dict or list)
         if isinstance(self.root, list):
@@ -55,7 +60,9 @@ class DependsOnVerifier:
                         chains_checked += 1
                         issues.extend(self._verify_chain_from(node, path, dep_val))
                     else:
-                        issues.append(self._err(path, "depends_on dataset must be a string path"))
+                        issues.append(
+                            self._err(path, "depends_on dataset must be a string path")
+                        )
 
         for it in issues:
             if it["severity"] == "ERROR":
@@ -69,7 +76,6 @@ class DependsOnVerifier:
             "warnings": warnings,
         }
         return issues, summary
-
 
     def _build_index(self, node, current_group_path):
         # Handle lists
@@ -156,7 +162,9 @@ class DependsOnVerifier:
             if attributes.get("name") == attr_name:
                 return attributes.get("values")
         else:
-            print(f"Warning: unexpected attributes type {type(attributes)} in node {node}")
+            print(
+                f"Warning: unexpected attributes type {type(attributes)} in node {node}"
+            )
         return None
 
     @staticmethod
@@ -195,7 +203,9 @@ class DependsOnVerifier:
 
         # sanity: dep_val must be str or '.'
         if not isinstance(dep_val, str):
-            issues.append(self._err(start_path, "depends_on attribute must be a string"))
+            issues.append(
+                self._err(start_path, "depends_on attribute must be a string")
+            )
             return issues
 
         # Follow chain
@@ -203,7 +213,9 @@ class DependsOnVerifier:
         while True:
             steps += 1
             if steps > 10_000:
-                issues.append(self._err(start_path, "Chain too long (possible infinite loop)"))
+                issues.append(
+                    self._err(start_path, "Chain too long (possible infinite loop)")
+                )
                 break
 
             if dep_val == ".":
@@ -212,10 +224,12 @@ class DependsOnVerifier:
 
             target_path = self._resolve_path(base_group, dep_val)
             if target_path is None:
-                issues.append(self._err(
-                    start_path,
-                    f"Unresolved depends_on reference '{dep_val}' relative to '{base_group}'"
-                ))
+                issues.append(
+                    self._err(
+                        start_path,
+                        f"Unresolved depends_on reference '{dep_val}' relative to '{base_group}'",
+                    )
+                )
                 break
 
             if target_path in seen:
@@ -228,19 +242,27 @@ class DependsOnVerifier:
 
             target_node = self.index.get(target_path)
             if not isinstance(target_node, dict):
-                issues.append(self._err(start_path, f"Target '{target_path}' is not a JSON object"))
+                issues.append(
+                    self._err(
+                        start_path, f"Target '{target_path}' is not a JSON object"
+                    )
+                )
                 break
 
             # Validate the axis field (as per NXtransformations)
-            issues.extend(self._validate_axis_field(target_node, start_path, target_path))
+            issues.extend(
+                self._validate_axis_field(target_node, start_path, target_path)
+            )
 
             # Next hop
             nxt = self._get_attr(target_node, "depends_on")
             if nxt is None:
-                issues.append(self._err(
-                    start_path,
-                    f"Node '{target_path}' in chain is missing 'depends_on' (should be '.' at the end)"
-                ))
+                issues.append(
+                    self._err(
+                        start_path,
+                        f"Node '{target_path}' in chain is missing 'depends_on' (should be '.' at the end)",
+                    )
+                )
                 break
 
             base_group = self.node_group.get(id(target_node), self._parent(target_path))
@@ -248,9 +270,12 @@ class DependsOnVerifier:
 
         # Optional: add an INFO line with the resolved chain
         if chain:
-            issues.append(self._info(
-                start_path, f"Chain: {start_path} -> " + " -> ".join(chain) + " -> ."
-            ))
+            issues.append(
+                self._info(
+                    start_path,
+                    f"Chain: {start_path} -> " + " -> ".join(chain) + " -> .",
+                )
+            )
 
         return issues
 
@@ -260,22 +285,39 @@ class DependsOnVerifier:
         # vector: required for axis
         vec = self._parse_vec(self._get_attr(node, "vector"))
         if vec is None:
-            issues.append(self._err(start_path, f"'{node_path}': missing or invalid 'vector' (need 3 numbers)"))
+            issues.append(
+                self._err(
+                    start_path,
+                    f"'{node_path}': missing or invalid 'vector' (need 3 numbers)",
+                )
+            )
         else:
             # non-zero and ~unit length
-            mag2 = vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]
+            mag2 = vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]
             if mag2 == 0.0:
-                issues.append(self._err(start_path, f"'{node_path}': vector must be non-zero"))
+                issues.append(
+                    self._err(start_path, f"'{node_path}': vector must be non-zero")
+                )
             else:
-                mag = mag2 ** 0.5
+                mag = mag2**0.5
                 if abs(mag - 1.0) > 1e-6:
-                    issues.append(self._warn(start_path, f"'{node_path}': vector not unit length (|v|={mag:.6f})"))
+                    issues.append(
+                        self._warn(
+                            start_path,
+                            f"'{node_path}': vector not unit length (|v|={mag:.6f})",
+                        )
+                    )
 
         # transformation_type: if present, must be valid
         ttype = self._get_attr(node, "transformation_type")
         if ttype is not None:
             if ttype not in ("rotation", "translation"):
-                issues.append(self._err(start_path, f"'{node_path}': invalid transformation_type '{ttype}'"))
+                issues.append(
+                    self._err(
+                        start_path,
+                        f"'{node_path}': invalid transformation_type '{ttype}'",
+                    )
+                )
             else:
                 units = self._get_attr(node, "units")
                 if units is None:
@@ -283,20 +325,41 @@ class DependsOnVerifier:
                     if self._nx_class(node) == "NXlog":
                         ok, vu = self._nxlog_has_f144_value_units(node)
                         if ok:
-                            issues.append(self._info(start_path, f"'{node_path}': units provided via f144.value_units='{vu}'"))
+                            issues.append(
+                                self._info(
+                                    start_path,
+                                    f"'{node_path}': units provided via f144.value_units='{vu}'",
+                                )
+                            )
                         else:
-                            issues.append(self._warn(start_path, f"'{node_path}': NXlog has no 'units' and no f144.value_units found"))
+                            issues.append(
+                                self._warn(
+                                    start_path,
+                                    f"'{node_path}': NXlog has no 'units' and no f144.value_units found",
+                                )
+                            )
                     else:
-                        issues.append(self._warn(start_path, f"'{node_path}': missing 'units' attribute"))
-
+                        issues.append(
+                            self._warn(
+                                start_path, f"'{node_path}': missing 'units' attribute"
+                            )
+                        )
 
         # offset: if present, must be 3-vector; warn if offset_units missing
         off = self._parse_vec(self._get_attr(node, "offset"))
         if off is not None:
             if len(off) != 3:
-                issues.append(self._err(start_path, f"'{node_path}': offset must have 3 components"))
+                issues.append(
+                    self._err(
+                        start_path, f"'{node_path}': offset must have 3 components"
+                    )
+                )
             if self._get_attr(node, "offset_units") is None:
-                issues.append(self._warn(start_path, f"'{node_path}': has 'offset' but no 'offset_units'"))
+                issues.append(
+                    self._warn(
+                        start_path, f"'{node_path}': has 'offset' but no 'offset_units'"
+                    )
+                )
 
         return issues
 
@@ -352,7 +415,9 @@ class DependsOnReportDialog(QDialog):
 
         # Show errors and warnings first, then infos
         prio = {"ERROR": 0, "WARN": 1, "INFO": 2}
-        for item in sorted(issues, key=lambda x: (prio.get(x["severity"], 9), x["node"], x["detail"])):
+        for item in sorted(
+            issues, key=lambda x: (prio.get(x["severity"], 9), x["node"], x["detail"])
+        ):
             QTreeWidgetItem(tree, [item["severity"], item["node"], item["detail"]])
 
         layout.addWidget(tree)

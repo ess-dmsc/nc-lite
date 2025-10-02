@@ -7,14 +7,26 @@ import vtk
 from PyQt6.Qsci import QsciLexerJSON, QsciScintilla
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor
-from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
-                             QFileDialog, QFormLayout, QFrame, QHBoxLayout,
-                             QLineEdit, QMainWindow, QPushButton, QSplitter,
-                             QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
-from depend_on import DependsOnVerifier, DependsOnReportDialog
+from depend_on import DependsOnReportDialog, DependsOnVerifier
 
 MAX_TOTAL_LIST_LEN = 1_000_000
 
@@ -497,8 +509,10 @@ class MainWindow(QMainWindow):
         dlg = DependsOnReportDialog(self, issues, summary)
         dlg.exec()
 
-        msg = f"depends_on: {summary['chains_checked']} chain(s) checked, "\
-              f"{summary['errors']} error(s), {summary['warnings']} warning(s)"
+        msg = (
+            f"depends_on: {summary['chains_checked']} chain(s) checked, "
+            f"{summary['errors']} error(s), {summary['warnings']} warning(s)"
+        )
         self.status_bar.showMessage(msg)
 
     def insert_nxlog(self):
@@ -595,10 +609,17 @@ class MainWindow(QMainWindow):
             "children": [
                 {
                     "module": module,
-                    "config": {"source": source, "topic": topic, "dtype": "double", "value_units": units},
-                    "attributes": []
-                    if not units
-                    else [{"name": "units", "dtype": "string", "values": units}],
+                    "config": {
+                        "source": source,
+                        "topic": topic,
+                        "dtype": "double",
+                        "value_units": units,
+                    },
+                    "attributes": (
+                        []
+                        if not units
+                        else [{"name": "units", "dtype": "string", "values": units}]
+                    ),
                 }
             ],
         }
@@ -666,7 +687,9 @@ class MainWindow(QMainWindow):
             json_data = self.build_json()
             with open(file_name, "w") as file:
                 if compress:
-                    json.dump(json_data, file, separators=(',', ':'), ensure_ascii=False)
+                    json.dump(
+                        json_data, file, separators=(",", ":"), ensure_ascii=False
+                    )
                 else:
                     json.dump(json_data, file, indent=2)
 
@@ -698,7 +721,11 @@ class MainWindow(QMainWindow):
         geometries = []
 
         def condition_fn(node):
-            if isinstance(node, dict) and "name" in node and node["name"] == "pixel_shape":
+            if (
+                isinstance(node, dict)
+                and "name" in node
+                and node["name"] == "pixel_shape"
+            ):
                 if "children" not in node:
                     return False
                 return True
@@ -716,7 +743,13 @@ class MainWindow(QMainWindow):
                 elif child.get("config", {}).get("name") == "winding_order":
                     winding_order = child["config"]["values"]
             if vertices and faces and winding_order:
-                geometries.append({"vertices": vertices, "faces": faces, "winding_order": winding_order})
+                geometries.append(
+                    {
+                        "vertices": vertices,
+                        "faces": faces,
+                        "winding_order": winding_order,
+                    }
+                )
 
         traverse_json(json_obj, condition_fn, action_fn)
         return geometries
