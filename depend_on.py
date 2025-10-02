@@ -147,9 +147,16 @@ class DependsOnVerifier:
 
     @staticmethod
     def _get_attr(node, attr_name):
-        for a in node.get("attributes", []):
-            if a.get("name") == attr_name:
-                return a.get("values")
+        attributes = node.get("attributes", [])
+        if isinstance(attributes, list):
+            for a in attributes:
+                if a.get("name") == attr_name:
+                    return a.get("values")
+        elif isinstance(attributes, dict):
+            if attributes.get("name") == attr_name:
+                return attributes.get("values")
+        else:
+            print(f"Warning: unexpected attributes type {type(attributes)} in node {node}")
         return None
 
     @staticmethod
