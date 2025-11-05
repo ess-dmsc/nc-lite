@@ -1,6 +1,7 @@
 import json
 import sys
 import threading
+import os
 
 import numpy as np
 import vtk
@@ -11,7 +12,7 @@ from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
                              QFileDialog, QFormLayout, QFrame, QHBoxLayout,
                              QLineEdit, QMainWindow, QPushButton, QSplitter,
                              QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                             QWidget)
+                             QWidget, QMessageBox)
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 MAX_TOTAL_LIST_LEN = 1_000_000
@@ -125,11 +126,11 @@ class MainWindow(QMainWindow):
         file_menu.addAction(open_action)
 
         save_action = QAction("Save as...", self)
-        save_action.triggered.connect(lambda: self.save_json(compress=False))
+        save_action.triggered.connect(lambda: self.save_dialog(compress=False))
         file_menu.addAction(save_action)
 
         save_compressed_action = QAction("Save as compressed...", self)
-        save_compressed_action.triggered.connect(lambda: self.save_json(compress=True))
+        save_compressed_action.triggered.connect(lambda: self.save_dialog(compress=True))
         file_menu.addAction(save_compressed_action)
 
         edit_menu = menubar.addMenu("Edit")
@@ -524,6 +525,51 @@ class MainWindow(QMainWindow):
                 name_edit.text(),
             )
 
+    def squasher(self, file_path):
+        """Copied-over from nexus-json-templates"""
+        def custom_format(obj, level=0):
+            """Format JSON with no spaces between keys and values, lists compact, and dictionaries on new lines."""
+            if isinstance(obj, dict):
+                # format dictionary items
+                items = [f'\n{" " * level}"{k}":{custom_format(v, level + 0)}' for k, v in obj.items()]
+                return '{' + ','.join(items) + '\n' + ' ' * (level - 0) + '}'
+            elif isinstance(obj, list):
+                # keep lists on single line
+                return '[' + ','.join(custom_format(v, level + 0) for v in obj) + ']'
+            else:
+                # output as JSON formatted strings without spaces
+                return json.dumps(obj, separators=(',', ':'))
+
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+
+            # reformat
+            formatted_json = custom_format(data, level=0)
+
+            # Write formatted JSON back to the file
+            with open(file_path, 'w', encoding='utf-8') as file:
+                file.write(formatted_json)
+
+            print(f"Formatted {file_path}")
+
+        else:
+            print(f"File {file_path} does not exist")
+
+    def ask_and_copy_to_dynamic(self, dynamic_json_name, json_data, compress, file_name):
+        msgBox = QMessageBox(self)
+        msgBox.setText("Do you want to carry over the changes to the dynamic json?")
+        msgBox.setWindowTitle("Confirm changes propagate")
+
+        # buttons
+        msgBox.setStandardButtons(QMessageBox.StandardButton.Yes)
+        msgBox.addButton(QMessageBox.StandardButton.No)
+        msgBox.setDefaultButton(QMessageBox.StandardButton.No)
+
+        if msgBox.exec() == QMessageBox.StandardButton.Yes:
+
+            self.save_json(dynamic_json_name, json_data, compress)
+
     def create_initial_json(self):
         return {
             "children": [
@@ -624,17 +670,133 @@ class MainWindow(QMainWindow):
             for i in range(self.tree_widget.topLevelItemCount())
         ]
 
-    def save_json(self, compress=False):
+############ copied over from nexus-json-templates
+    def traverse_json(self, json_obj, condition_fn, action_fn, path=[]) -> None:
+        """
+        Recursively traverse the JSON object applying a condition function
+        at each node. If the condition is met, applies an action function.
+
+        :param json_obj: The JSON object or part of it being traversed.
+        :param condition_fn: A function that takes a node and returns True if the condition is met.
+        :param action_fn: A function that performs an action on nodes that meet the condition.
+        :param path: The current path to the node, used for tracking the node's location within the JSON.
+        """
+        if condition_fn(json_obj):
+            action_fn(json_obj, path)
+
+        if isinstance(json_obj, dict):
+            for key, value in json_obj.items():
+                traverse_json(value, condition_fn, action_fn, path + [key])
+        elif isinstance(json_obj, list):
+            for index, item in enumerate(json_obj):
+                traverse_json(item, condition_fn, action_fn, path + [index])
+
+
+    def remove_all_nxoff_geometry_groups(self, json_obj) -> None:
+        def condition_fn(node):
+            if isinstance(node, list) and len(node) > 0:
+                for child in node:
+                    if not isinstance(child, dict):
+                        continue
+                    if "name" in child and child["name"] == "pixel_shape":
+                        return True
+
+            return False
+
+        def action_fn(node, path):
+            for i, child in enumerate(node):
+                if "name" in child and child["name"] == "pixel_shape":
+                    del node[i]
+                    return
+
+        traverse_json(json_obj, condition_fn, action_fn)
+
+
+    def remove_pixel_info(self, json_obj) -> None:
+        REMOVE_THESE = [
+            "detector_number",
+            "x_pixel_offset",
+            "y_pixel_offset",
+            "z_pixel_offset",
+        ]
+        def condition_fn(node):
+            if isinstance(node, dict) and "children" in node:
+                for child in node["children"]:
+                    if (
+                        isinstance(child, dict)
+                        and "module" in child
+                        and child["module"] == "dataset"
+                    ):
+                        if (
+                            "config" in child
+                            and "name" in child["config"]
+                            and child["config"]["name"] in REMOVE_THESE
+                        ):
+                            return True
+            return False
+
+        def action_fn(node, path):
+            to_remove = []
+            for child in node["children"]:
+                if "module" in child and child["module"] == "dataset":
+                    if (
+                        "config" in child
+                        and "name" in child["config"]
+                        and child["config"]["name"] in REMOVE_THESE
+                    ):
+                        to_remove.append(child)
+
+            for item in to_remove:
+                node["children"].remove(item)
+                print(f"Removing {item['config']['name']} from children")
+
+        traverse_json(json_obj, condition_fn, action_fn)
+
+    def remove_template_version(self, json_obj) -> None:
+        """
+        Removes the template_version from the root of the JSON object.
+
+        :param json_obj: The JSON object or part of it being modified.
+        """
+        if "template_version" in json_obj:
+            del json_obj["template_version"]
+############
+
+    def save_json(self, file_name, json_data, compress):
+        with open(file_name, "w") as file:
+            if compress:
+                json.dump(json_data, file, separators=(',', ':'), ensure_ascii=False)
+            else:
+                json.dump(json_data, file, indent=2)
+
+    def save_dialog(self, compress=False):
         file_name, _ = QFileDialog.getSaveFileName(
             self, "Save JSON File", "", "JSON Files (*.json)"
         )
-        if file_name:
+        # Check if the changes are alread in dynamic.json, while we make changes to json with geometry.
+        # Don't cross-check changes when changing non-standart jsons like dream_beam_monitor_simple.json
+        if file_name and all(['-dynamic' not in file_name, '-' not in file_name, '_' not in file_name]):
+
+            dynamic_json_name = file_name.replace('.json', '-dynamic.json')
+            with open(dynamic_json_name, 'r') as f:
+                dynamic_json = json.load(f)
+
             json_data = self.build_json()
-            with open(file_name, "w") as file:
-                if compress:
-                    json.dump(json_data, file, separators=(',', ':'), ensure_ascii=False)
-                else:
-                    json.dump(json_data, file, indent=2)
+
+            self.save_json(file_name, json_data, compress)
+
+            self.squasher(file_name)
+
+            self.remove_all_nxoff_geometry_groups(json_data)
+            self.remove_pixel_info(json_data)
+            self.remove_template_version(json_data)
+
+            if dynamic_json != json_data:
+                self.ask_and_copy_to_dynamic(dynamic_json_name, json_data, compress, file_name)
+
+        elif file_name:
+            json_data = self.build_json()
+            self.save_json(file_name, json_data, compress)
 
     def validate_json(self):
         # Function to validate JSON data in the editor
