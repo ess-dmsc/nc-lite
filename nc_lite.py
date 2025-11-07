@@ -7,12 +7,26 @@ import vtk
 from PyQt6.Qsci import QsciLexerJSON, QsciScintilla
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor
-from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
-                             QFileDialog, QFormLayout, QFrame, QHBoxLayout,
-                             QLineEdit, QMainWindow, QPushButton, QSplitter,
-                             QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+
+from depend_on import DependsOnReportDialog, DependsOnVerifier
 
 MAX_TOTAL_LIST_LEN = 1_000_000
 
@@ -165,6 +179,12 @@ class MainWindow(QMainWindow):
         render_off_geometry_action = QAction("Render OFF Geometry", self)
         render_off_geometry_action.triggered.connect(self.render_off_geometry)
         view_menu.addAction(render_off_geometry_action)
+
+        tools_menu = menubar.addMenu("Tools")
+        verify_action = QAction("Verify depends_on", self)
+        verify_action.setShortcut("Ctrl+D")
+        verify_action.triggered.connect(self.verify_depends_on)
+        tools_menu.addAction(verify_action)
 
         self.tree_widget.itemSelectionChanged.connect(self.on_item_selection_changed)
         self.json_editor.textChanged.connect(self.on_editor_text_changed)
@@ -467,6 +487,34 @@ class MainWindow(QMainWindow):
             self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
             self.json_editor.clear()
 
+    def verify_depends_on(self):
+        """
+        Walks the current JSON, finds all nodes with a 'depends_on' attribute,
+        resolves each chain according to NXtransformations rules, and reports:
+          - broken references
+          - cycles
+          - missing attributes (vector, depends_on)
+          - non-unit or invalid vectors
+          - invalid/unknown transformation_type
+          - offset present without offset_units (warning)
+        """
+        data = self.build_json()
+        if data is None:
+            self.status_bar.showMessage("Nothing to verify.")
+            return
+
+        verifier = DependsOnVerifier(data)
+        issues, summary = verifier.run()
+
+        dlg = DependsOnReportDialog(self, issues, summary)
+        dlg.exec()
+
+        msg = (
+            f"depends_on: {summary['chains_checked']} chain(s) checked, "
+            f"{summary['errors']} error(s), {summary['warnings']} warning(s)"
+        )
+        self.status_bar.showMessage(msg)
+
     def insert_nxlog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add Skeleton Module")
@@ -561,10 +609,17 @@ class MainWindow(QMainWindow):
             "children": [
                 {
                     "module": module,
-                    "config": {"source": source, "topic": topic, "dtype": "double", "value_units": units},
-                    "attributes": []
-                    if not units
-                    else [{"name": "units", "dtype": "string", "values": units}],
+                    "config": {
+                        "source": source,
+                        "topic": topic,
+                        "dtype": "double",
+                        "value_units": units,
+                    },
+                    "attributes": (
+                        []
+                        if not units
+                        else [{"name": "units", "dtype": "string", "values": units}]
+                    ),
                 }
             ],
         }
@@ -632,7 +687,9 @@ class MainWindow(QMainWindow):
             json_data = self.build_json()
             with open(file_name, "w") as file:
                 if compress:
-                    json.dump(json_data, file, separators=(',', ':'), ensure_ascii=False)
+                    json.dump(
+                        json_data, file, separators=(",", ":"), ensure_ascii=False
+                    )
                 else:
                     json.dump(json_data, file, indent=2)
 
@@ -664,7 +721,11 @@ class MainWindow(QMainWindow):
         geometries = []
 
         def condition_fn(node):
-            if isinstance(node, dict) and "name" in node and node["name"] == "pixel_shape":
+            if (
+                isinstance(node, dict)
+                and "name" in node
+                and node["name"] == "pixel_shape"
+            ):
                 if "children" not in node:
                     return False
                 return True
@@ -682,7 +743,13 @@ class MainWindow(QMainWindow):
                 elif child.get("config", {}).get("name") == "winding_order":
                     winding_order = child["config"]["values"]
             if vertices and faces and winding_order:
-                geometries.append({"vertices": vertices, "faces": faces, "winding_order": winding_order})
+                geometries.append(
+                    {
+                        "vertices": vertices,
+                        "faces": faces,
+                        "winding_order": winding_order,
+                    }
+                )
 
         traverse_json(json_obj, condition_fn, action_fn)
         return geometries
