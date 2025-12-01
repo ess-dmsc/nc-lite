@@ -825,7 +825,7 @@ class MainWindow(QMainWindow):
     def _order_children_nexus(self, new_nxlogs, existing_children):
         """
         Combine freshly built NXlog children with existing non-NXlog children
-        and order them as requested:
+        and order them as:
 
           1. All NXlog groups in alphabetical order by group name.
           2. All *static* datasets (module == 'dataset' and name != 'depends_on')
@@ -1012,9 +1012,6 @@ class MainWindow(QMainWindow):
     def _build_nxdisk_chopper_logs(self, pv_root, topic, tdc_suffix="02-TS-I"):
         """
         Build the canonical set of NXlog groups for an NXdisk_chopper.
-
-        We hard-code the known PV suffixes and units according to your example,
-        except for the TDC suffix which is configurable (00-TS-I, 01-TS-I, 02-TS-I, ...).
         """
         logs = []
 
