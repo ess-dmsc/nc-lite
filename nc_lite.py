@@ -258,9 +258,15 @@ class MainWindow(QMainWindow):
             try:
                 with open(file_name, "r") as file:
                     data = json.load(file)
-                self.tree_widget.clear()  # Clear existing items in the tree
+
+                self.tree_widget.clear()
+                self.json_data_store.clear()
+                self.currently_selected_item = None
+
                 self.populate_tree(data, None)
-                self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
+                if self.tree_widget.topLevelItemCount() > 0:
+                    self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
+
             except json.JSONDecodeError as e:
                 # Handle invalid JSON
                 with open(file_name, "r") as file:
@@ -339,6 +345,7 @@ class MainWindow(QMainWindow):
                 updated_json = json.loads(self.json_editor.text())
                 node_data = self.json_data_store[id(self.currently_selected_item)]
                 node_data["data"] = updated_json
+
                 if isinstance(updated_json, dict):
                     new_name = self._get_name(updated_json)
                 elif isinstance(updated_json, str):
@@ -346,6 +353,13 @@ class MainWindow(QMainWindow):
                 else:
                     raise ValueError("Invalid JSON type")
                 self.currently_selected_item.setText(0, new_name)
+
+                old_children = [
+                    self.currently_selected_item.child(i)
+                    for i in range(self.currently_selected_item.childCount())
+                ]
+                for ch in old_children:
+                    self._remove_subtree_from_store(ch)
 
                 # Clear current children of the tree item
                 self.currently_selected_item.takeChildren()
@@ -372,12 +386,17 @@ class MainWindow(QMainWindow):
         elif self.tree_widget.topLevelItemCount() == 0:
             try:
                 updated_json = json.loads(self.json_editor.text())
-                self.tree_widget.clear()  # Clear existing items in the tree
+                self.tree_widget.clear()
+                self.json_data_store.clear()
+                self.currently_selected_item = None
+
                 self.populate_tree(updated_json, None)
+                if self.tree_widget.topLevelItemCount() > 0:
+                    self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
+
                 self.clear_error_highlighting()
                 self.status_bar.showMessage("Looks good!")
             except json.JSONDecodeError as e:
-                # Handle invalid JSON
                 self.highlight_error(e.lineno, e.colno)
                 self.status_bar.showMessage(
                     f"JSON Error: {e.msg} at line {e.lineno}, column {e.colno}"
@@ -459,6 +478,21 @@ class MainWindow(QMainWindow):
                 parent_data["parent"], parent_data["treeItem"], parent_json
             )
 
+    def _remove_subtree_from_store(self, item):
+        """
+        Remove the given QTreeWidgetItem and all of its descendants
+        from json_data_store to avoid keeping dead subtrees alive.
+        """
+        if item is None:
+            return
+
+        stack = [item]
+        while stack:
+            it = stack.pop()
+            for i in range(it.childCount()):
+                stack.append(it.child(i))
+            self.json_data_store.pop(id(it), None)
+
     def delete_selected_item(self):
         selected_items = self.tree_widget.selectedItems()
         if not selected_items:
@@ -467,25 +501,29 @@ class MainWindow(QMainWindow):
         item_to_delete = selected_items[0]
         parent_item = item_to_delete.parent()
 
-        # Remove the item from the tree
+        self._remove_subtree_from_store(item_to_delete)
+
         if parent_item:
             index = parent_item.indexOfChild(item_to_delete)
             parent_item.removeChild(item_to_delete)
+
             # Update parent's data in json_data_store
             parent_data = self.json_data_store.get(id(parent_item))
             if parent_data and "children" in parent_data["data"]:
                 del parent_data["data"]["children"][index]
 
             self.tree_widget.setCurrentItem(parent_item)
+            self.currently_selected_item = parent_item
+
         else:
-            # If it's a top-level item
             index = self.tree_widget.indexOfTopLevelItem(item_to_delete)
             self.tree_widget.takeTopLevelItem(index)
-            del self.json_data_store[id(item_to_delete)]
 
             self.currently_selected_item = None
-            self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
             self.json_editor.clear()
+
+            if self.tree_widget.topLevelItemCount() > 0:
+                self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
 
     def verify_depends_on(self):
         """
@@ -627,13 +665,35 @@ class MainWindow(QMainWindow):
         # Insert into the currently selected JSON item
         if self.currently_selected_item:
             node_data = self.json_data_store.get(id(self.currently_selected_item))
-            if node_data:
-                json_data = node_data["data"]
-                if "children" not in json_data:
-                    json_data["children"] = []
-                json_data["children"].append(skeleton_module)
-                self.json_editor.setText(json.dumps(json_data, indent=4))
-                self.on_editor_text_changed()  # Update the editor and data store
+            if not node_data:
+                return
+
+            json_data = node_data["data"]
+            if "children" not in json_data:
+                json_data["children"] = []
+            json_data["children"].append(skeleton_module)
+
+            self._add_tree_item(skeleton_module, self.currently_selected_item)
+
+            self.update_parent_node(
+                node_data["parent"], self.currently_selected_item, json_data
+            )
+
+            safe_to_render = is_within_cumulative_length_limit(
+                json_data, MAX_TOTAL_LIST_LEN
+            )
+            if safe_to_render:
+                self.json_editor.blockSignals(True)
+                try:
+                    self.json_editor.setText(json.dumps(json_data, indent=4))
+                finally:
+                    self.json_editor.blockSignals(False)
+            else:
+                self.status_bar.showMessage(
+                    f"NXlog inserted, but JSON is too large to render "
+                    f"(total list length exceeds {MAX_TOTAL_LIST_LEN})."
+                )
+
         else:
             # If no item is selected, insert at the root level
             self.populate_tree(skeleton_module, None)
@@ -642,13 +702,35 @@ class MainWindow(QMainWindow):
     def insert_simple_string(self, name):
         if self.currently_selected_item:
             node_data = self.json_data_store.get(id(self.currently_selected_item))
-            if node_data:
-                json_data = node_data["data"]
-                if "children" not in json_data:
-                    json_data["children"] = []
-                json_data["children"].append(name)
-                self.json_editor.setText(json.dumps(json_data, indent=4))
-                self.on_editor_text_changed()
+            if not node_data:
+                return
+
+            json_data = node_data["data"]
+            if "children" not in json_data:
+                json_data["children"] = []
+            json_data["children"].append(name)
+
+            self._add_tree_item(name, self.currently_selected_item)
+
+            self.update_parent_node(
+                node_data["parent"], self.currently_selected_item, json_data
+            )
+
+            safe_to_render = is_within_cumulative_length_limit(
+                json_data, MAX_TOTAL_LIST_LEN
+            )
+            if safe_to_render:
+                self.json_editor.blockSignals(True)
+                try:
+                    self.json_editor.setText(json.dumps(json_data, indent=4))
+                finally:
+                    self.json_editor.blockSignals(False)
+            else:
+                self.status_bar.showMessage(
+                    f"String inserted, but JSON is too large to render "
+                    f"(total list length exceeds {MAX_TOTAL_LIST_LEN})."
+                )
+
         else:
             self.populate_tree(name, None)
             self.tree_widget.setCurrentItem(self.tree_widget.topLevelItem(0))
