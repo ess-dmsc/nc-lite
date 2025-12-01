@@ -175,6 +175,20 @@ class MainWindow(QMainWindow):
         autoformat_action.triggered.connect(self.autoformat_json)
         format_menu.addAction(autoformat_action)
 
+        autoformat_nxdisk_chopper_action = QAction(
+            "Auto-format selected NXdisk_chopper", self
+        )
+        autoformat_nxdisk_chopper_action.triggered.connect(
+            self.autoformat_nxdisk_chopper
+        )
+        format_menu.addAction(autoformat_nxdisk_chopper_action)
+
+        autoformat_nxpositioner_action = QAction(
+            "Auto-format selected NXpositioner", self
+        )
+        autoformat_nxpositioner_action.triggered.connect(self.autoformat_nxpositioner)
+        format_menu.addAction(autoformat_nxpositioner_action)
+
         view_menu = menubar.addMenu("View")
         render_off_geometry_action = QAction("Render OFF Geometry", self)
         render_off_geometry_action.triggered.connect(self.render_off_geometry)
@@ -778,6 +792,475 @@ class MainWindow(QMainWindow):
     def validate_json(self):
         # Function to validate JSON data in the editor
         pass
+
+    def _get_attribute(self, node, name):
+        if not isinstance(node, dict):
+            return None
+        for attr in node.get("attributes", []):
+            if attr.get("name") == name:
+                return attr
+        return None
+
+    def _get_nx_class(self, node):
+        attr = self._get_attribute(node, "NX_class")
+        if attr is None:
+            return None
+        return attr.get("values")
+
+    def _is_nxlog_group(self, node):
+        if not isinstance(node, dict):
+            return False
+        if node.get("type") != "group":
+            return False
+        return self._get_nx_class(node) == "NXlog"
+
+    def _is_dataset_node(self, node):
+        return isinstance(node, dict) and node.get("module") == "dataset"
+
+    def _is_depends_on_dataset(self, node):
+        if not self._is_dataset_node(node):
+            return False
+        return node.get("config", {}).get("name") == "depends_on"
+
+    def _order_children_nexus(self, new_nxlogs, existing_children):
+        """
+        Combine freshly built NXlog children with existing non-NXlog children
+        and order them as requested:
+
+          1. All NXlog groups in alphabetical order by group name.
+          2. All *static* datasets (module == 'dataset' and name != 'depends_on')
+             in alphabetical order by config.name.
+          3. Any remaining non-NXlog / non-dataset children in their original order
+             (e.g. 'transformations' groups).
+          4. Finally the 'depends_on' dataset(s), in their original order.
+        """
+
+        static_datasets = []
+        other_children = []
+        depends_on_datasets = []
+
+        for child in existing_children:
+            if self._is_dataset_node(child):
+                if self._is_depends_on_dataset(child):
+                    depends_on_datasets.append(child)
+                else:
+                    static_datasets.append(child)
+            else:
+                other_children.append(child)
+
+        nxlogs_sorted = sorted(new_nxlogs, key=lambda c: c.get("name", ""))
+        static_sorted = sorted(
+            static_datasets,
+            key=lambda c: c.get("config", {}).get("name", ""),
+        )
+
+        return nxlogs_sorted + static_sorted + other_children + depends_on_datasets
+
+    def _create_f144_nxlog_group(self, name, source, topic, dtype, units=None):
+        """
+        Helper to build a standard NXlog group with one f144 child.
+        units:
+          - pass a string (including "") to create 'value_units' and 'units' attribute
+          - pass None to omit units
+        """
+        child = {
+            "module": "f144",
+            "config": {
+                "source": source,
+                "topic": topic,
+                "dtype": dtype,
+            },
+        }
+
+        if units is not None:
+            child.setdefault("config", {})["value_units"] = units
+            child["attributes"] = [
+                {
+                    "name": "units",
+                    "dtype": "string",
+                    "values": units,
+                }
+            ]
+
+        group = {
+            "name": name,
+            "type": "group",
+            "children": [child],
+            "attributes": [
+                {
+                    "name": "NX_class",
+                    "dtype": "string",
+                    "values": "NXlog",
+                }
+            ],
+        }
+        return group
+
+    def autoformat_nxdisk_chopper(self):
+        if not self.currently_selected_item:
+            self.status_bar.showMessage("No item selected.")
+            return
+
+        node_data = self.json_data_store.get(id(self.currently_selected_item))
+        if not node_data:
+            self.status_bar.showMessage("No data for selected item.")
+            return
+
+        group = node_data["data"]
+        if not isinstance(group, dict):
+            self.status_bar.showMessage("Selected node is not a group.")
+            return
+
+        if self._get_nx_class(group) != "NXdisk_chopper":
+            self.status_bar.showMessage(
+                "Selected group is not an NXdisk_chopper (NX_class != 'NXdisk_chopper')."
+            )
+            return
+
+        params = self._prompt_nxdisk_chopper_params(group)
+        if params is None:
+            return
+        pv_root, topic, tdc_suffix = params
+
+        children = group.get("children", [])
+        non_log_children = [c for c in children if not self._is_nxlog_group(c)]
+
+        new_logs = self._build_nxdisk_chopper_logs(pv_root, topic, tdc_suffix)
+
+        group["children"] = self._order_children_nexus(new_logs, non_log_children)
+
+        self.json_editor.setText(json.dumps(group, indent=4))
+        self.on_editor_text_changed()
+        self.status_bar.showMessage("Auto-formatted NXdisk_chopper NXlogs.")
+
+    def _prompt_nxdisk_chopper_params(self, group):
+        """
+        Dialog asking for chopper PV root, Kafka topic, and TDC suffix.
+
+        Example:
+          PV root:   ODIN-ChpSy1:Chop-FOC-101
+          Topic:     odin_choppers
+          TDC suffix (after ':'): 00-TS-I
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Auto-format NXdisk_chopper")
+        layout = QFormLayout(dialog)
+
+        pv_root_edit = QLineEdit(dialog)
+        topic_edit = QLineEdit(dialog)
+        tdc_suffix_edit = QLineEdit(dialog)
+
+        tdc_suffix = "00-TS-I"
+
+        tdc_found = False
+        for child in group.get("children", []):
+            if (
+                isinstance(child, dict)
+                and child.get("name") == "top_dead_center"
+                and self._is_nxlog_group(child)
+                and child.get("children")
+            ):
+                cfg = child["children"][0].get("config", {})
+                src = cfg.get("source", "")
+                topic = cfg.get("topic", "")
+                if ":" in src:
+                    parts = src.split(":")
+                    pv_root_edit.setText(":".join(parts[:-1]))
+                    tdc_suffix = parts[-1]
+                if topic:
+                    topic_edit.setText(topic)
+                tdc_found = True
+                break
+
+        if not tdc_found:
+            for child in group.get("children", []):
+                if self._is_nxlog_group(child) and child.get("children"):
+                    cfg = child["children"][0].get("config", {})
+                    src = cfg.get("source", "")
+                    topic = cfg.get("topic", "")
+                    if ":" in src:
+                        pv_root_edit.setText(":".join(src.split(":")[:-1]))
+                    if topic:
+                        topic_edit.setText(topic)
+                    break
+
+        tdc_suffix_edit.setText(tdc_suffix)
+
+        layout.addRow("PV root:", pv_root_edit)
+        layout.addRow("Topic:", topic_edit)
+        layout.addRow("TDC suffix (after ':'):", tdc_suffix_edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            pv_root = pv_root_edit.text().strip()
+            topic = topic_edit.text().strip()
+            tdc_suffix = tdc_suffix_edit.text().strip().lstrip(":")
+
+            if not pv_root or not topic:
+                self.status_bar.showMessage("PV root and topic must not be empty.")
+                return None
+
+            return pv_root, topic, tdc_suffix
+        return None
+
+    def _build_nxdisk_chopper_logs(self, pv_root, topic, tdc_suffix="02-TS-I"):
+        """
+        Build the canonical set of NXlog groups for an NXdisk_chopper.
+
+        We hard-code the known PV suffixes and units according to your example,
+        except for the TDC suffix which is configurable (00-TS-I, 01-TS-I, 02-TS-I, ...).
+        """
+        logs = []
+
+        # rotation_speed (Hz) :Spd_R
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="rotation_speed",
+                source=f"{pv_root}:Spd_R",
+                topic=topic,
+                dtype="double",
+                units="Hz",
+            )
+        )
+
+        # rotation_speed_setpoint (Hz) :Spd_S
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="rotation_speed_setpoint",
+                source=f"{pv_root}:Spd_S",
+                topic=topic,
+                dtype="double",
+                units="Hz",
+            )
+        )
+
+        # top_dead_center via tdct module, no dtype/units, NXlog group has default="time"
+        tdc_source = f"{pv_root}:{tdc_suffix.lstrip(':')}"
+        tdc_group = {
+            "name": "top_dead_center",
+            "type": "group",
+            "children": [
+                {
+                    "module": "tdct",
+                    "config": {
+                        "topic": topic,
+                        "source": tdc_source,
+                    },
+                }
+            ],
+            "attributes": [
+                {
+                    "name": "NX_class",
+                    "dtype": "string",
+                    "values": "NXlog",
+                },
+                {
+                    "name": "default",
+                    "dtype": "string",
+                    "values": "time",
+                },
+            ],
+        }
+        logs.append(tdc_group)
+
+        # delay (ns) :TotDly
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="delay",
+                source=f"{pv_root}:TotDly",
+                topic=topic,
+                dtype="double",
+                units="ns",
+            )
+        )
+
+        # experiment_delay (ns) :ChopDly-S
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="experiment_delay",
+                source=f"{pv_root}:ChopDly-S",
+                topic=topic,
+                dtype="double",
+                units="ns",
+            )
+        )
+
+        # mechanical_delay (degrees) :MechDly-S
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="mechanical_delay",
+                source=f"{pv_root}:MechDly-S",
+                topic=topic,
+                dtype="double",
+                units="degrees",
+            )
+        )
+
+        # pulse_delay (ns) :BeamPosDly-S
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="pulse_delay",
+                source=f"{pv_root}:BeamPosDly-S",
+                topic=topic,
+                dtype="double",
+                units="ns",
+            )
+        )
+
+        # park_angle (degrees) :Pos_R
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="park_angle",
+                source=f"{pv_root}:Pos_R",
+                topic=topic,
+                dtype="double",
+                units="degrees",
+            )
+        )
+
+        return logs
+
+    def autoformat_nxpositioner(self):
+        if not self.currently_selected_item:
+            self.status_bar.showMessage("No item selected.")
+            return
+
+        node_data = self.json_data_store.get(id(self.currently_selected_item))
+        if not node_data:
+            self.status_bar.showMessage("No data for selected item.")
+            return
+
+        group = node_data["data"]
+        if not isinstance(group, dict):
+            self.status_bar.showMessage("Selected node is not a group.")
+            return
+
+        if self._get_nx_class(group) != "NXpositioner":
+            self.status_bar.showMessage(
+                "Selected group is not an NXpositioner (NX_class != 'NXpositioner')."
+            )
+            return
+
+        params = self._prompt_nxpositioner_params(group)
+        if params is None:
+            return
+        pv_root, topic, units = params
+
+        children = group.get("children", [])
+        non_log_children = [c for c in children if not self._is_nxlog_group(c)]
+
+        new_logs = self._build_nxpositioner_logs(pv_root, topic, units)
+
+        group["children"] = self._order_children_nexus(new_logs, non_log_children)
+
+        self.json_editor.setText(json.dumps(group, indent=4))
+        self.on_editor_text_changed()
+        self.status_bar.showMessage("Auto-formatted NXpositioner NXlogs.")
+
+    def _prompt_nxpositioner_params(self, group):
+        """
+        Dialog asking for motor PV root, topic and units.
+
+        Example:
+          PV root:  ODIN-ColSl3:MC-SlYp-01:Mtr
+          Topic:    odin_motion
+          Units:    mm
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Auto-format NXpositioner")
+        layout = QFormLayout(dialog)
+
+        pv_root_edit = QLineEdit(dialog)
+        topic_edit = QLineEdit(dialog)
+        units_edit = QLineEdit(dialog)
+        units_edit.setText("mm")
+
+        for child in group.get("children", []):
+            if self._is_nxlog_group(child) and child.get("children"):
+                cfg = child["children"][0].get("config", {})
+                src = cfg.get("source", "")
+                topic = cfg.get("topic", "")
+                value_units = cfg.get("value_units", "")
+
+                if "." in src:
+                    pv_root_edit.setText(src.rsplit(".", 1)[0])
+                if topic:
+                    topic_edit.setText(topic)
+                if value_units:
+                    units_edit.setText(value_units)
+                break
+
+        layout.addRow("PV root:", pv_root_edit)
+        layout.addRow("Topic:", topic_edit)
+        layout.addRow("Units (for value/target):", units_edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            pv_root = pv_root_edit.text().strip()
+            topic = topic_edit.text().strip()
+            units = units_edit.text().strip()
+            if not pv_root or not topic:
+                self.status_bar.showMessage("PV root and topic must not be empty.")
+                return None
+            return pv_root, topic, units
+        return None
+
+    def _build_nxpositioner_logs(self, pv_root, topic, units):
+        """
+        Build the canonical NXlog groups for an NXpositioner.
+
+        - value         -> pv_root + ".RBV"
+        - target_value  -> pv_root + ".VAL"
+        - idle_flag     -> pv_root + ".DMOV"  (int, units "")
+        """
+        logs = []
+
+        # value
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="value",
+                source=f"{pv_root}.RBV",
+                topic=topic,
+                dtype="double",
+                units=units,
+            )
+        )
+
+        # target_value
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="target_value",
+                source=f"{pv_root}.VAL",
+                topic=topic,
+                dtype="double",
+                units=units,
+            )
+        )
+
+        # idle_flag (int, unitless but still represented as "")
+        logs.append(
+            self._create_f144_nxlog_group(
+                name="idle_flag",
+                source=f"{pv_root}.DMOV",
+                topic=topic,
+                dtype="int",
+                units="",
+            )
+        )
+
+        return logs
 
     def render_off_geometry(self):
         if not self.currently_selected_item:
